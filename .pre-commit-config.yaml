@@ -1,0 +1,43 @@
+# The same gates as CI, before the push rather than after.
+#
+# Everything here also runs in CI. That is on purpose: pre-commit is a
+# convenience, not the enforcement. A contributor who has not installed it must
+# still be caught, and a contributor who has should not be surprised by CI.
+#
+#     pip install pre-commit && pre-commit install
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      # Three of our four datasets are ShareAlike and cannot be redistributed.
+      # A large file appearing in a commit is worth a second look before it is
+      # in the history permanently.
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      # Better to catch a key before it is committed than to rewrite public
+      # history afterwards.
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      # Not from a third-party repo: this is our script, and it has to run
+      # against the working tree rather than a hook environment.
+      - id: spdx-headers
+        name: SPDX headers present
+        entry: python scripts/apply_spdx_headers.py --check
+        language: system
+        pass_filenames: false
+        files: \.py$

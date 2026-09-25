@@ -1,0 +1,29 @@
+aethics-eval
+Copyright 2026 AETHICS
+
+This product includes software developed at AETHICS.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+--------------------------------------------------------------------------
+Datasets
+--------------------------------------------------------------------------
+
+This package does not redistribute any evaluation dataset. Datasets are
+fetched from their original sources at pinned revisions at run time, and each
+remains under its own licence and carries its own citation requirement. See
+docs/datasets.md for the full inventory.
+
+WinoBias is MIT-licensed. StereoSet, CrowS-Pairs and BOLD are CC-BY-SA-4.0;
+that ShareAlike obligation is why they are loaded rather than vendored, so it
+does not propagate to this package or to yours.
+
+If you publish results produced with this tool, cite the benchmark authors as
+well as this package. `aethics list-tasks --json` prints the required citation
+for every task.
+
+--------------------------------------------------------------------------
+Dependencies
+--------------------------------------------------------------------------
+
+Third-party dependency licences are inventoried in THIRD_PARTY_LICENSES.md.

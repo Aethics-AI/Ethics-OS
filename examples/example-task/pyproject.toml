@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aethics-eval-example-task"
+version = "0.1.0"
+description = "Demo out-of-tree benchmark task for aethics-eval (VOS-3 plugin discovery)."
+requires-python = ">=3.10"
+dependencies = ["aethics-eval"]
+
+# This is the whole point of VOS-3: declaring an entry point in the
+# `aethics_eval.tasks` group makes the task register automatically on
+# `pip install`. The value points at a module whose import runs @register_task.
+[project.entry-points."aethics_eval.tasks"]
+example_yes_rate = "aethics_eval_example"
+
+[tool.setuptools.packages.find]
+where = ["src"]

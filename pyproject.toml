@@ -1,0 +1,224 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aethics-eval"
+# POS-9: single source of truth. The version was duplicated here and in
+# __init__.py, which is a release hazard rather than an untidiness — they can
+# drift, and then the wheel's metadata disagrees with the code inside it.
+# Hatchling reads it from the module; there is now nowhere for it to disagree.
+dynamic = ["version"]
+description = "Reproducible bias and safety evaluation for language models."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "AETHICS" }]
+keywords = ["evaluation", "bias", "fairness", "safety", "benchmarks", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core install stays light. Every heavy import in the package is lazy (inside a
+# function), so a user scoring an API-hosted model never pulls torch.
+#
+# numpy / pydantic / httpx are the set named in the work order. Nothing in the
+# package imports them at the time of writing — they are declared ahead of the
+# tickets that need them: pydantic for VOS-4's result schema, httpx for VOS-1's
+# OpenAI-compatible provider, numpy for the statistics work in VOS-5. Declaring
+# them now keeps the published dependency set stable across those PRs rather
+# than widening it after people have already installed.
+#
+# datasets is required to load WinoBias / StereoSet / CrowS-Pairs / BOLD.
+# Imported lazily at standard_benchmarks.py:387,570,904 but needed by every
+# benchmark, so it belongs in the core install rather than an extra.
+dependencies = [
+    "datasets>=4.4,<5",
+    "httpx>=0.28,<1",
+    # jsonschema validates a result against the published VOS-4 schema
+    # (schemas/result-v1.json) — used by results.validation and in CI.
+    "jsonschema>=4.20,<5",
+    "numpy>=2.0,<3",
+    "pydantic>=2.9,<3",
+    # POS-3: the CLI.
+    #
+    # typer-slim, upper-bounded at <0.22 deliberately. In 0.20 it is the
+    # minimal package and pulls only click. From 0.24 the packaging inverted:
+    # typer-slim declares a dependency on typer, which pulls rich and
+    # shellingham, so "slim" stops being slim — verified by installing both.
+    # A CLI this small has no use for rich, and a public package should not add
+    # two transitive dependencies to every install by accident.
+    #
+    # If the bound needs lifting, check what `pip install typer-slim==<new>`
+    # actually resolves to first rather than trusting the name.
+    "typer-slim>=0.20,<0.22",
+]
+
+[project.scripts]
+aethics = "aethics_eval.cli:app"
+
+[project.optional-dependencies]
+# Local open-weight inference for exact logprobs. ~2GB. Imported lazily in
+# LogprobScorer._ensure_loaded (logprob_scorer.py:64) and nowhere else.
+local = [
+    "torch>=2.13,<3",
+    "transformers>=4.57,<5",
+]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "import-linter>=2.1",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    # tests/test_release_metadata.py reads pyproject.toml. tomllib is stdlib
+    # from 3.11 only, and this package supports 3.10.
+    'tomli>=2.0; python_version < "3.11"',
+]
+# POS-7: the documentation site. Separate from [dev] because building the docs
+# is not part of running the tests, and nobody should need a theme installed to
+# run pytest.
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5,<10",
+]
+
+[tool.hatch.version]
+path = "src/aethics_eval/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aethics_eval"]
+
+# ── Lint ────────────────────────────────────────────────────────────
+# POS-6 owns the final CI ruleset; this is a working baseline so the tree
+# is clean rather than "341 errors, all ignored".
+#
+# Deliberately NOT enabling UP (pyupgrade) yet. It wants typing.Dict ->
+# dict in ~215 places across every module. That is a reasonable change but
+# it is a mass rewrite of files VOS-2 still has to merge into, and it would
+# destroy the byte-for-byte equivalence with pre-extraction sources that is
+# currently POS-1's strongest review evidence. Turn it on in POS-6, in its
+# own commit, once the branches have converged.
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "RUF", "S", "BLE"]
+ignore = [
+    "E501",    # line length — the formatter owns this
+    "S311",    # non-crypto random: bootstrap resampling and permutation tests
+    "RUF001",  # ambiguous unicode in strings — en dashes are intentional prose
+    "RUF002",  # same, in docstrings
+    "RUF003",  # same, in comments
+    "BLE001",  # blind except: the engine degrades to not_measured by design,
+               # which requires catching whatever a provider throws. Narrowing
+               # these is real work and belongs with the provider tickets.
+    "S110",    # try/except/pass — same rationale, and each one is deliberate
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",  # assert is how pytest works
+    "S603",  # subprocess with a fixed, local argv — that is the test's point
+]
+"scripts/*" = ["S101"]
+# typer declares options as `x: T = typer.Option(...)` in the signature. B008
+# exists to catch mutable defaults evaluated once at import; here it is the
+# library's entire design, and the objects are immutable descriptors. Ignoring
+# it for the CLI is correct rather than a workaround.
+"src/aethics_eval/cli.py" = ["B008"]
+
+[tool.pytest.ini_options]
+# POS-7 note: the public API's docstring examples are executed by
+# tests/test_docstring_examples.py rather than by `--doctest-modules` here.
+# A path argument overrides `testpaths`, and CI invokes `pytest tests/`, so
+# configuring doctests at this level would have collected them locally and
+# silently skipped them in CI — an unexecuted example that looks checked.
+testpaths = ["tests"]
+# VOS-6: validity tests load the pinned reference model and reproduce published
+# benchmark numbers. They are slow (model download + real inference), so they are
+# excluded from the default run and executed nightly:
+#     pytest -m validity          # run them
+#     pytest -m "not validity"    # the default PR run
+markers = [
+    "validity: reproduces published benchmark numbers against the pinned reference model (slow; nightly)",
+]
+# No asyncio_mode: the suite has no bare `async def test_` functions — every
+# async path is driven through asyncio.run() inside sync tests, so pytest-asyncio
+# is not a dependency. Setting asyncio_mode without it only emits an "unknown
+# config option" warning on every run.
+
+# ── POS-1 step 3: the boundary, enforced ────────────────────────────
+# aethics_eval is a standalone library. It must never import the FastAPI
+# product it was extracted from, nor the proprietary compliance layer (§8).
+# Checked by tests/test_import_contract.py so a careless import fails CI.
+[tool.importlinter]
+root_packages = ["aethics_eval"]
+# fastapi and supabase are third-party, so the graph must include external
+# packages or the contract errors out rather than checking anything.
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "aethics_eval must not import the SaaS product or proprietary layer"
+type = "forbidden"
+source_modules = ["aethics_eval"]
+forbidden_modules = [
+    "core",
+    "app",
+    "routes",
+    "auth",
+    "supabase",
+    "fastapi",
+]
+allow_indirect_imports = false
+
+# ── Types ───────────────────────────────────────────────────────────
+# POS-6: mypy over the *public API surface*, per the ticket — not the whole
+# package. The surface is what a third party imports and what the SaaS consumes
+# across the VOS-4 seam, so it is where a type error becomes someone else's
+# problem. The legacy engine internals (nlp_evaluation_engine, the bias/safety
+# testers) carry ~48 pre-existing errors; typing those is real work and belongs
+# with whoever next touches them, not bundled into a CI ticket.
+#
+# Files are listed explicitly rather than excluded by pattern: a new module is
+# then untyped until someone decides it is public, rather than silently
+# inheriting the gate.
+[tool.mypy]
+# No python_version pin: setting it to 3.10 makes mypy reject numpy's own stubs,
+# which use 3.12 syntax. Compatibility with 3.10 is checked by actually running
+# the suite on it in the matrix, which is the stronger check anyway.
+ignore_missing_imports = true
+warn_unused_configs = true
+files = [
+    "src/aethics_eval/__init__.py",
+    "src/aethics_eval/aggregation.py",
+    "src/aethics_eval/dataset_licenses.py",
+    "src/aethics_eval/dataset_loading.py",
+    "src/aethics_eval/manifest.py",
+    "src/aethics_eval/models.py",
+    "src/aethics_eval/results",
+    "src/aethics_eval/tasks/base.py",
+    "src/aethics_eval/tasks/registry.py",
+]
+
+# ── Coverage ────────────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["aethics_eval"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abc.abstractmethod",
+    "@abstractmethod",
+    "if __name__ == .__main__.:",
+]
